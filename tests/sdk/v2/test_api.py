@@ -224,6 +224,7 @@ class TestWorkflowRun:
                 # Set up config
                 config = _api.RuntimeConfig(
                     runtime_name=RuntimeName.IN_PROCESS,
+                    runtime_options={},
                     bypass_factory_methods=True,
                 )
 
@@ -257,6 +258,7 @@ class TestWorkflowRun:
                 config_name = "ray"
                 config_obj = _api.RuntimeConfig(
                     runtime_name=RuntimeName.RAY_LOCAL,
+                    runtime_options={},
                     name=config_name,
                     bypass_factory_methods=True,
                 )
@@ -322,6 +324,7 @@ class TestWorkflowRun:
                     # Set up config
                     config_obj = _api.RuntimeConfig(
                         runtime_name=RuntimeName.RAY_LOCAL,
+                        runtime_options={},
                         name=config_name,
                         bypass_factory_methods=True,
                     )
@@ -1543,6 +1546,7 @@ class TestRuntimeConfiguration:
             monkeypatch.setenv("ORQ_CONFIG_PATH", "not_a_valid_file")
             config = _api.RuntimeConfig(
                 "IN_PROCESS",
+                runtime_options={},
                 name="test_name",
                 bypass_factory_methods=True,
             )
@@ -1563,7 +1567,11 @@ class TestRuntimeConfiguration:
     class TestAsDict:
         @staticmethod
         def test_with_no_runtime_options():
-            config = _api.RuntimeConfig("IN_PROCESS", bypass_factory_methods=True)
+            config = _api.RuntimeConfig(
+                "IN_PROCESS",
+                runtime_options={},
+                bypass_factory_methods=True,
+            )
 
             dict = config._as_dict()
 
@@ -1573,10 +1581,15 @@ class TestRuntimeConfiguration:
 
         @staticmethod
         def test_with_all_runtime_options():
-            config = _api.RuntimeConfig("IN_PROCESS", bypass_factory_methods=True)
-            config.uri = "test_uri"
-            config.address = "test_address"
-            config.token = "test_token"
+            config = _api.RuntimeConfig(
+                "IN_PROCESS",
+                runtime_options={
+                    "uri": "test_uri",
+                    "address": "test_address",
+                    "token": "test_token",
+                },
+                bypass_factory_methods=True,
+            )
 
             dict = config._as_dict()
 

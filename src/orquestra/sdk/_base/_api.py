@@ -7,7 +7,6 @@ Redesigned, user-facing SDK API.
 
 import json
 import logging
-import os
 import re
 import time
 import typing as t
@@ -940,7 +939,7 @@ class RuntimeConfig:
         return (
             self._name == other._name
             and self._runtime_name == other._runtime_name
-            and self._get_runtime_options() == other._get_runtime_options()
+            and self._runtime_options == other._runtime_options
         )
 
     @property
@@ -1284,9 +1283,13 @@ class RuntimeConfig:
         except KeyError as e:
             raise AttributeError(f"This config doesn't have the {name} field") from e
 
+    # ---- properties for remote configs ----
+
     @property
     def uri(self) -> str:
         """
+        Base part of the remote runtime cluster URI, like "https://foo.bar.com".
+
         Raises:
             AttributeError: if this config doesn't have the requested field.
         """
@@ -1295,10 +1298,74 @@ class RuntimeConfig:
     @property
     def token(self) -> str:
         """
+        Auth token for accessing remote runtime.
+
         Raises:
             AttributeError: if this config doesn't have the requested field.
         """
         return self._get_runtime_option("token")
+
+    # ---- properties for Ray configs ----
+
+    @property
+    def address(self) -> str:
+        """
+        Ray cluster address.
+
+        See also: https://docs.ray.io/en/latest/ray-core/package-ref.html#ray-init.
+
+        Raises:
+            AttributeError: if this config doesn't have the requested field.
+        """
+        return self._get_runtime_option("address")
+
+    @property
+    def log_to_driver(self) -> bool:
+        """
+        If true, logs produced by Ray tasks will be printed to this interpreter's
+        stdout/stderr instead of log files.
+
+        See also: https://docs.ray.io/en/latest/ray-core/package-ref.html#ray-init.
+
+        Raises:
+            AttributeError: if this config doesn't have the requested field.
+        """
+        return self._get_runtime_option("log_to_driver")
+
+    @property
+    def storage(self) -> str:
+        """
+        Specifies storage location for data related to Ray Workflows functionality.
+
+        See also: https://docs.ray.io/en/latest/ray-core/package-ref.html#ray-init.
+
+        Raises:
+            AttributeError: if this config doesn't have the requested field.
+        """
+        return self._get_runtime_option("storage")
+
+    @property
+    def temp_dir(self) -> str:
+        """
+        Specifies where Ray persists its data. Applies to functionality that's unrelated
+        to Ray Workflows.
+
+        See also: https://docs.ray.io/en/latest/ray-core/package-ref.html#ray-init.
+
+        Raises:
+            AttributeError: if this config doesn't have the requested field.
+        """
+        return self._get_runtime_option("temp_dir")
+
+    @property
+    def configure_logging(self) -> bool:
+        """
+        See also: https://docs.ray.io/en/latest/ray-core/package-ref.html#ray-init.
+
+        Raises:
+            AttributeError: if this config doesn't have the requested field.
+        """
+        return self._get_runtime_option("configure_logging")
 
     def save(
         self,
@@ -1363,7 +1430,6 @@ class RuntimeConfig:
                 f"saved config: {saved_uri}"
                 "). Nothing has been saved. Please check the config name and try again."
             )
-
 
         # We have three token values: the one that this RuntimeConfig object had prior
         # to this method being called, the one saved in the file, and the one passed to
