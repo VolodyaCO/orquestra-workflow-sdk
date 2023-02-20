@@ -887,6 +887,7 @@ class RuntimeConfig:
     def __init__(
         self,
         runtime_name: str,
+        runtime_options: t.Mapping[str, t.Any],
         name: t.Optional[str] = None,
         bypass_factory_methods=False,
     ):
@@ -901,6 +902,7 @@ class RuntimeConfig:
             )
 
         self._name = name
+
         try:
             self._runtime_name: RuntimeName = RuntimeName(runtime_name)
         except ValueError as e:
@@ -908,7 +910,11 @@ class RuntimeConfig:
                 f'"{runtime_name}" is not a valid runtime name. Valid names are:\n'
                 + "\n".join(f'"{x.value}"' for x in RuntimeName)
             ) from e
+
         self._config_save_file = _config._get_config_file_path()
+
+        # Runtime-specific config fields.
+        self._runtime_options: t.Dict[str, t.Any] = dict(runtime_options)
 
     def __str__(self) -> str:
         outstr = (
@@ -917,8 +923,8 @@ class RuntimeConfig:
         params_str = " with parameters:"
         for key in _config.RUNTIME_OPTION_NAMES:
             try:
-                params_str += f"\n- {key}: {getattr(self, key)}"
-            except AttributeError:
+                params_str += f"\n- {key}: {self._runtime_options[key]}"
+            except KeyError:
                 continue
         if params_str == " with parameters:":
             outstr += "."
@@ -973,7 +979,7 @@ class RuntimeConfig:
 
         return saved_config == self
 
-    def _get_runtime_options(self) -> dict:
+    def _get_runtime_options(self) -> t.Mapping[str, t.Any]:
         """
         Construct a dictionary of the current runtime options.
 
@@ -981,11 +987,7 @@ class RuntimeConfig:
         options are attributes, to the backend where we want them as a dict we can pass
         around.
         """
-        runtime_options: dict = {}
-        for key in _config.RUNTIME_OPTION_NAMES:
-            if hasattr(self, key):
-                runtime_options[key] = getattr(self, key)
-        return runtime_options
+        return {key: self._runtime_options[key] for key in _config.RUNTIME_OPTION_NAMES}
 
     # region factories
     @classmethod
@@ -1006,7 +1008,12 @@ class RuntimeConfig:
                 "'name' is ignored for in_process() config",
                 FutureWarning,
             )
-        return RuntimeConfig("IN_PROCESS", "in_process", True)
+        return RuntimeConfig(
+            runtime_name="IN_PROCESS",
+            runtime_options={},
+            name="in_process",
+            bypass_factory_methods=True,
+        )
 
     @classmethod
     def ray(
@@ -1027,17 +1034,21 @@ class RuntimeConfig:
                 "'name' is ignored for ray() config",
                 FutureWarning,
             )
-        config = RuntimeConfig("RAY_LOCAL", "local", True)
-        setattr(config, "log_to_driver", False)
-        setattr(config, "configure_logging", False)
-
-        # The paths for 'storage' and 'temp_dir' should have been passed when starting
-        # the cluster, not here. Let's keep these attributes on our config object anyway
-        # to retain the consistent shape
-        setattr(config, "storage", None)
-        setattr(config, "temp_dir", None)
-        setattr(config, "address", "auto")
-        return config
+        return RuntimeConfig(
+            runtime_name="RAY_LOCAL",
+            runtime_options={
+                "log_to_driver": False,
+                "configure_logging": False,
+                # The paths for 'storage' and 'temp_dir' should have been passed when
+                # starting the cluster, not here. Let's keep these attributes on our
+                # config object anyway to retain the consistent shape
+                "storage": None,
+                "temp_dir": None,
+                "address": "auto",
+            },
+            name="ray",
+            bypass_factory_methods=True,
+        )
 
     @classmethod
     def qe(
@@ -1066,11 +1077,10 @@ class RuntimeConfig:
 
         config = RuntimeConfig(
             runtime_name,
+            runtime_options={"uri": uri, "token": token},
             name=config_name,
             bypass_factory_methods=True,
         )
-        setattr(config, "uri", uri)
-        setattr(config, "token", token)
         _config.save_or_update(config_name, runtime_name, config._get_runtime_options())
 
         return config
@@ -1102,11 +1112,10 @@ class RuntimeConfig:
 
         config = RuntimeConfig(
             runtime_name,
+            runtime_options={"uri": uri, "token": token},
             name=config_name,
             bypass_factory_methods=True,
         )
-        setattr(config, "uri", uri)
-        setattr(config, "token", token)
         _config.save_or_update(config_name, runtime_name, config._get_runtime_options())
 
         return config
@@ -1127,12 +1136,7 @@ class RuntimeConfig:
 
         _project_dir: Path = Path(project_dir or Path.cwd())
 
-        runtime_options = {}
-        for key in _config.RUNTIME_OPTION_NAMES:
-            try:
-                runtime_options[key] = getattr(self, key)
-            except AttributeError:
-                continue
+        runtime_options = self._get_runtime_options()
 
         return _build_runtime(
             _project_dir,
@@ -1261,16 +1265,40 @@ class RuntimeConfig:
         elif config.runtime_name == RuntimeName.RAY_LOCAL:
             return RuntimeConfig.ray()
 
-        interpreted_config = RuntimeConfig(
-            config.runtime_name,
-            config.config_name,
+        return RuntimeConfig(
+            runtime_name=config.runtime_name,
+            runtime_options=dict(config.runtime_options),
+            name=config.config_name,
             bypass_factory_methods=True,
         )
-        for key in config.runtime_options:
-            setattr(interpreted_config, key, config.runtime_options[key])
-        return interpreted_config
 
     # endregion LOADING FROM FILE
+
+    def _get_runtime_option(self, name: str):
+        """
+        Raises:
+            AttributeError: if this config doesn't have the requested field.
+        """
+        try:
+            return self._runtime_options[name]
+        except KeyError as e:
+            raise AttributeError(f"This config doesn't have the {name} field") from e
+
+    @property
+    def uri(self) -> str:
+        """
+        Raises:
+            AttributeError: if this config doesn't have the requested field.
+        """
+        return self._get_runtime_option("uri")
+
+    @property
+    def token(self) -> str:
+        """
+        Raises:
+            AttributeError: if this config doesn't have the requested field.
+        """
+        return self._get_runtime_option("token")
 
     def save(
         self,
@@ -1325,7 +1353,8 @@ class RuntimeConfig:
                 f"saved config: {old_config._runtime_name}"
                 "). Nothing has been saved. Please check the config name and try again."
             )
-        uri, saved_uri = (getattr(self, "uri"), getattr(old_config, "uri"))
+        uri = self.uri
+        saved_uri = old_config.uri
         if uri != saved_uri:
             raise ConfigNameNotFoundError(
                 f"A runtime configuration with name {self.name} exists, but relates to "
@@ -1335,20 +1364,19 @@ class RuntimeConfig:
                 "). Nothing has been saved. Please check the config name and try again."
             )
 
-        new_runtime_options: dict = old_config._get_runtime_options()
-        new_runtime_options["token"] = token
 
         # We have three token values: the one that this RuntimeConfig object had prior
         # to this method being called, the one saved in the file, and the one passed to
         # this method. We want to avoid any confusion about what is happening to each
         # of them.
-        if token != getattr(self, "token"):
-            if getattr(self, "token") == getattr(old_config, "token"):
+        if token != self.token:
+            if self.token == old_config.token:
                 # This is the most expected scenario - the RuntimeConfig matches the
                 # file, and the user has provided a new token.
-                self.token = token
+                self._runtime_options["token"] = token
                 _config.update_config(
-                    config_name=self.name, new_runtime_options=new_runtime_options
+                    config_name=self.name,
+                    new_runtime_options=self._get_runtime_options(),
                 )
                 logging.info(
                     f"Updated authorisation token written to '{self.name}' "
@@ -1389,7 +1417,8 @@ class RuntimeConfig:
                 # value, then called this method with the same argument. Given that
                 # they've asked twice, it's only polite to save it for them.
                 _config.update_config(
-                    config_name=self.name, new_runtime_options=new_runtime_options
+                    config_name=self.name,
+                    new_runtime_options=self._get_runtime_options(),
                 )
                 logging.info(
                     f"Updated authorisation token written to '{self.name}' "
@@ -1414,18 +1443,11 @@ class RuntimeConfig:
                     },
                 }
         """
-        runtime_options = {}
-        for key in _config.RUNTIME_OPTION_NAMES:
-            if hasattr(self, key):
-                runtime_options[key] = getattr(self, key)
-
-        dict = {
+        return {
             "config_name": str(self._name),
             "runtime_name": self._runtime_name,
-            "runtime_options": runtime_options,
+            "runtime_options": self._get_runtime_options(),
         }
-
-        return dict
 
 
 def migrate_config_file():
