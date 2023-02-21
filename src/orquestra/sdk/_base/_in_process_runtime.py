@@ -1,6 +1,7 @@
 ################################################################################
 # © Copyright 2022-2023 Zapata Computing Inc.
 ################################################################################
+import logging
 import typing as t
 from datetime import datetime, timedelta, timezone
 
@@ -10,9 +11,7 @@ from orquestra.sdk.schema.workflow_run import (
     RunStatus,
     State,
     TaskRun,
-    TaskRunId,
     WorkflowRun,
-    WorkflowRunId,
 )
 
 from .. import secrets
@@ -20,6 +19,9 @@ from ..exceptions import WorkflowRunNotFoundError
 from ._graphs import iter_invocations_topologically
 from .dispatch import locate_fn_ref
 from .serde import deserialize_constant
+
+LOG = logging.getLogger(__name__)
+LOG.setLevel(logging.INFO)
 
 WfRunId = str
 ArtifactValue = t.Any
@@ -88,6 +90,7 @@ class InProcessRuntime(abc.RuntimeInterface):
 
     def create_workflow_run(self, workflow_def: ir.WorkflowDef) -> WfRunId:
         run_id = self._gen_next_run_id(workflow_def)
+        LOG.info("starting wf run %s with the in-process runtime", run_id)
 
         self._start_time_store[run_id] = datetime.now(timezone.utc)
 
@@ -103,9 +106,18 @@ class InProcessRuntime(abc.RuntimeInterface):
         # We'll store artifacts for this run here.
         self._artifact_store[run_id] = {}
 
+        n_all_invocations = len(workflow_def.task_invocations)
+
         # We are going to iterate over the workflow graph and execute each task
         # invocation sequentially, after topologically sorting the graph
-        for task_inv in iter_invocations_topologically(workflow_def):
+        for inv_i, task_inv in enumerate(iter_invocations_topologically(workflow_def)):
+            LOG.info(
+                "running task invocation %s/%s: %s",
+                inv_i + 1,
+                n_all_invocations,
+                task_inv.id,
+            )
+
             # We can get the task function, args and kwargs from the task invocation
             task_fn: t.Any = locate_fn_ref(workflow_def.tasks[task_inv.task_id].fn_ref)
             args = _get_args(consts, self._artifact_store[run_id], task_inv.args_ids)
@@ -138,6 +150,9 @@ class InProcessRuntime(abc.RuntimeInterface):
 
         self._end_time_store[run_id] = datetime.now(timezone.utc)
         self._workflow_def_store[run_id] = workflow_def
+
+        LOG.info("wf run %s finished", run_id)
+
         return run_id
 
     def get_workflow_run_outputs(self, workflow_run_id: WfRunId) -> t.Sequence[t.Any]:
