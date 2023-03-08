@@ -80,7 +80,7 @@ GraphNode = t.Union[_dsl.ArtifactFuture, _dsl.Constant, _dsl.Secret]
 class GraphTraversal:
     def __init__(self):
         self._artifacts: t.MutableMapping[t.Hashable, ir.ArtifactNode] = {}
-        self._invocations: t.MutableMapping[
+        self._invocation_futures: t.MutableMapping[
             _dsl.TaskInvocation, t.Set[_dsl.ArtifactFuture]
         ] = {}
         self._secrets: t.MutableMapping[t.Hashable, ir.SecretNode] = {}
@@ -98,13 +98,20 @@ class GraphTraversal:
         constant_counter = 0
         for n in _iter_nodes(root_futures):
             if isinstance(n, _dsl.ArtifactFuture):
-                self._artifacts[_make_key(n)] = _make_artifact_node(artifact_counter, n)
+                # We need to capture all artifact outputs of a given task call, even if
+                # the artifact futures  aren't bound to variables in the workflow
+                # function. To do that:
+                # 1. We get the task invocation's task def.
+                # 2. We make sure all task outputs are covered: each output has an
+                #    artifact node and output ID in the task invocation.
+                artifact_node = _make_artifact_node(artifact_counter, n)
+                self._artifacts[_make_key(n)] = artifact_node
                 artifact_counter += 1
                 # Map the invocation to the future.
                 # Note: Each unique future has one invocation, but each invocation
                 #       can have many Futures.
                 #       We're mapping `invocation: set(futures from invocation)`
-                self._invocations.setdefault(n.invocation, set()).add(n)
+                self._invocation_futures.setdefault(n.invocation, set()).add(n)
             elif isinstance(n, _dsl.Secret):
                 self._secrets[_make_key(n)] = ir.SecretNode(
                     id=f"secret-{secret_counter}",
@@ -117,24 +124,29 @@ class GraphTraversal:
                 constant_counter += 1
 
     @property
-    def artifacts(self):
-        return self._artifacts
+    def artifacts(self) -> t.Iterable[ir.ArtifactNode]:
+        return self._artifacts.values()
 
     @property
-    def constants(self):
-        return self._constants
+    def constants(self) -> t.Iterable[ir.ConstantNode]:
+        return self._constants.values()
 
     @property
-    def invocations(self) -> t.Mapping[_dsl.TaskInvocation, t.Set[_dsl.ArtifactFuture]]:
-        """
-        Key: DSL invocation.
-        Value: future objects for this task call's output artifacts.
-        """
-        return self._invocations
+    def invocations(self) -> t.Iterable[_dsl.TaskInvocation]:
+        return self._invocation_futures.keys()
+
+    def invocation_output_ids(
+        self, invocation: _dsl.TaskInvocation
+    ) -> t.Sequence[ir.ArtifactNodeId]:
+        # TODO: sort things just once when traversing the graph
+        futures = sorted(
+            self._invocation_futures[invocation], key=_sort_artifact_futures
+        )
+        return [self[future].id for future in futures]
 
     @property
-    def secrets(self):
-        return self._secrets
+    def secrets(self) -> t.Iterable[ir.SecretNode]:
+        return self._secrets.values()
 
     def get_argument_id(self, node: GraphNode):
         return self[node].id
@@ -559,8 +571,6 @@ def _make_invocation_model(
         for arg_name, arg_val in invocation.kwargs
     }
 
-    sorted_outputs = sorted(graph.invocations[invocation], key=_sort_artifact_futures)
-
     return ir.TaskInvocation(
         id=_make_invocation_id(
             task_models_dict[invocation.task].fn_ref.function_name,
@@ -570,7 +580,7 @@ def _make_invocation_model(
         task_id=task_models_dict[invocation.task].id,
         args_ids=args_ids,
         kwargs_ids=kwargs_ids,
-        output_ids=[graph[output_future].id for output_future in sorted_outputs],
+        output_ids=graph.invocation_output_ids(invocation),
         resources=_make_resources_model(invocation.resources),
         custom_image=invocation.custom_image,
     )
@@ -628,7 +638,7 @@ def flatten_graph(
     # As deferred git imports are fetching repos inside model creation, this is used
     # to avoid git fetch spam for the same repos over and over.
     cached_git_import_dict: t.Dict[t.Tuple, ir.Import] = {}
-    for invocation in graph.invocations.keys():
+    for invocation in graph.invocations:
         for imp in [
             invocation.task.source_import,
             *(invocation.task.dependency_imports or []),
@@ -647,10 +657,10 @@ def flatten_graph(
 
     task_models_dict: t.Dict[_dsl.TaskDef, ir.TaskDef] = {
         invocation.task: _make_task_model(invocation.task, import_models_dict)
-        for invocation in graph.invocations.keys()
+        for invocation in graph.invocations
     }
 
-    dsl_invocations = list(graph.invocations.keys())
+    dsl_invocations = list(graph.invocations)
 
     invocation_models_dict: t.Dict[_dsl.TaskInvocation, ir.TaskInvocation] = {
         dsl_invocation: _make_invocation_model(
@@ -680,14 +690,14 @@ def flatten_graph(
         tasks={task_model.id: task_model for task_model in task_models_dict.values()},
         artifact_nodes={
             artifact_node.id: artifact_node
-            for artifact_node in graph.artifacts.values()
+            for artifact_node in graph.artifacts
         },
         secret_nodes={
-            secret_node.id: secret_node for secret_node in graph.secrets.values()
+            secret_node.id: secret_node for secret_node in graph.secrets
         },
         constant_nodes={
             constant_node.id: constant_node
-            for constant_node in graph.constants.values()
+            for constant_node in graph.constants
         },
         task_invocations={
             invocation.id: invocation for invocation in invocation_models_dict.values()
