@@ -16,7 +16,7 @@ import pytest
 
 import orquestra.sdk.schema.ir as model
 from orquestra.sdk import exceptions, secrets
-from orquestra.sdk._base import _dsl, _traversal, _workflow, serde
+from orquestra.sdk._base import _dsl, dispatch, _traversal, _workflow, serde
 
 from .data.complex_serialization.workflow_defs import (
     generate_object_with_num,
@@ -697,6 +697,24 @@ class TestWorkflowsTasksProperties:
             for invocation in wf.task_invocations.values():
                 assert set(invocation.output_ids).isdisjoint(seen_ids)
                 seen_ids.update(invocation.output_ids)
+
+    @staticmethod
+    def test_n_invocation_outputs_matches_task_def(
+        workflow_template: _workflow.WorkflowTemplate,
+        task_defs: t.Sequence[_dsl.TaskDef],
+        outputs: t.List,
+        expectation: ContextManager,
+    ):
+        """
+        Number of task invocation output IDs should match the number of task def's
+        outputs.
+        """
+        with expectation:
+            wf_def = workflow_template.model
+            for inv in wf_def.task_invocations.values():
+                task_def_model = wf_def.tasks[inv.task_id]
+                task_def: _dsl.TaskDef = dispatch.locate_fn_ref(task_def_model.fn_ref)
+                assert len(inv.output_ids) == task_def.output_metadata.n_outputs
 
     @staticmethod
     def test_no_hanging_inputs(
