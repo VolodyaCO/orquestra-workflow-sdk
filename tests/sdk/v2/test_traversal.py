@@ -14,9 +14,9 @@ from unittest.mock import Mock
 import git
 import pytest
 
-import orquestra.sdk.schema.ir as model
+import orquestra.sdk.schema.ir as ir
 from orquestra.sdk import exceptions, secrets
-from orquestra.sdk._base import _dsl, dispatch, _traversal, _workflow, serde
+from orquestra.sdk._base import _dsl, _traversal, _workflow, dispatch, serde
 
 from .data.complex_serialization.workflow_defs import (
     generate_object_with_num,
@@ -362,7 +362,7 @@ def workflow_with_secret():
 
 
 def _id_from_wf(param):
-    if isinstance(param, (_workflow.WorkflowDef, model.WorkflowDef)):
+    if isinstance(param, (_workflow.WorkflowDef, ir.WorkflowDef)):
         return param.name
 
 
@@ -400,8 +400,8 @@ class TestFlattenGraph:
         dep_import = wf.imports[task.dependency_import_ids[0]]
 
         # main assertions
-        assert isinstance(source_import, model.LocalImport)
-        assert isinstance(dep_import, model.GitImport)
+        assert isinstance(source_import, ir.LocalImport)
+        assert isinstance(dep_import, ir.GitImport)
 
     def test_setting_invocation_metadata(self):
         # preconditions
@@ -414,13 +414,13 @@ class TestFlattenGraph:
         ]
 
         # main assertions
-        assert with_inv_meta.resources == model.Resources(
+        assert with_inv_meta.resources == ir.Resources(
             cpu="2000m",
             memory="10Gi",
             disk=None,
             gpu=None,
         )
-        assert with_task_meta.resources == model.Resources(
+        assert with_task_meta.resources == ir.Resources(
             cpu="1000m",
             memory=None,
             disk=None,
@@ -441,7 +441,7 @@ class TestFlattenGraph:
         wf = constant_collisions.model
         constant_nodes = []
         for constant_node in wf.constant_nodes.values():
-            assert isinstance(constant_node, model.ConstantNodeJSON)
+            assert isinstance(constant_node, ir.ConstantNodeJSON)
             constant_nodes.append(constant_node)
 
         serialised_constants = [con.value for con in constant_nodes]
@@ -490,7 +490,7 @@ class TestFlattenGraph:
 
         assert len(wf.imports) == 1
         (imp,) = wf.imports.values()
-        assert isinstance(imp, model.InlineImport)
+        assert isinstance(imp, ir.InlineImport)
 
         assert len(wf.tasks) == 1
         (task_def,) = wf.tasks.values()
@@ -693,7 +693,7 @@ class TestWorkflowsTasksProperties:
         """
         with expectation:
             wf = workflow_template.model
-            seen_ids: t.Set[model.ArtifactNodeId] = set()
+            seen_ids: t.Set[ir.ArtifactNodeId] = set()
             for invocation in wf.task_invocations.values():
                 assert set(invocation.output_ids).isdisjoint(seen_ids)
                 seen_ids.update(invocation.output_ids)
@@ -802,37 +802,37 @@ class TestWorkflowsTasksProperties:
             assert outputs == wf().local_run()
 
 
-CAPITALIZE_TASK_DEF = model.TaskDef(
+CAPITALIZE_TASK_DEF = ir.TaskDef(
     id=AnyMatchingStr(r"task-capitalize-\w{10}"),
-    fn_ref=model.ModuleFunctionRef(
+    fn_ref=ir.ModuleFunctionRef(
         module="tests.sdk.v2.test_traversal",
         function_name="capitalize",
         file_path="tests/sdk/v2/test_traversal.py",
         line_number=AnyPositiveInt(),
     ),
     parameters=[
-        model.TaskParameter(name="text", kind=model.ParameterKind.POSITIONAL_OR_KEYWORD)
+        ir.TaskParameter(name="text", kind=ir.ParameterKind.POSITIONAL_OR_KEYWORD)
     ],
     source_import_id=AnyMatchingStr(r"local-\w{10}"),
     custom_image=_dsl.DEFAULT_IMAGE,
 )
 
-CAPITALIZE_INLINE_TASK_DEF = model.TaskDef(
+CAPITALIZE_INLINE_TASK_DEF = ir.TaskDef(
     id=AnyMatchingStr(r"task-capitalize-inline-\w{10}"),
-    fn_ref=model.InlineFunctionRef(
+    fn_ref=ir.InlineFunctionRef(
         function_name="capitalize_inline",
         encoded_function=[AnyMatchingStr(r".*")],  # dont test actual encoding here
     ),
     parameters=[
-        model.TaskParameter(name="text", kind=model.ParameterKind.POSITIONAL_OR_KEYWORD)
+        ir.TaskParameter(name="text", kind=ir.ParameterKind.POSITIONAL_OR_KEYWORD)
     ],
     source_import_id=AnyMatchingStr(r"inline-import-\w{1}"),
     custom_image=_dsl.DEFAULT_IMAGE,
 )
 
-GIT_TASK_DEF = model.TaskDef(
+GIT_TASK_DEF = ir.TaskDef(
     id=AnyMatchingStr(r"task-git-task-\w{10}"),
-    fn_ref=model.ModuleFunctionRef(
+    fn_ref=ir.ModuleFunctionRef(
         module="tests.sdk.v2.test_traversal",
         function_name="git_task",
         file_path="tests/sdk/v2/test_traversal.py",
@@ -844,9 +844,9 @@ GIT_TASK_DEF = model.TaskDef(
 )
 
 
-GENERATE_GRAPH_TASK_DEF = model.TaskDef(
+GENERATE_GRAPH_TASK_DEF = ir.TaskDef(
     id=AnyMatchingStr(r"task-generate-graph-\w{10}"),
-    fn_ref=model.ModuleFunctionRef(
+    fn_ref=ir.ModuleFunctionRef(
         module="tests.sdk.v2.test_traversal",
         function_name="generate_graph",
         file_path="tests/sdk/v2/test_traversal.py",
@@ -860,16 +860,16 @@ GENERATE_GRAPH_TASK_DEF = model.TaskDef(
     custom_image=_dsl.DEFAULT_IMAGE,
 )
 
-PYTHON_IMPORTS_MANUAL_TASK_DEF = model.TaskDef(
+PYTHON_IMPORTS_MANUAL_TASK_DEF = ir.TaskDef(
     id=AnyMatchingStr(r"task-python-imports-manual-\w{10}"),
-    fn_ref=model.ModuleFunctionRef(
+    fn_ref=ir.ModuleFunctionRef(
         module="tests.sdk.v2.test_traversal",
         function_name="python_imports_manual",
         file_path="tests/sdk/v2/test_traversal.py",
         line_number=AnyPositiveInt(),
     ),
     parameters=[
-        model.TaskParameter(name="text", kind=model.ParameterKind.POSITIONAL_OR_KEYWORD)
+        ir.TaskParameter(name="text", kind=ir.ParameterKind.POSITIONAL_OR_KEYWORD)
     ],
     source_import_id=AnyMatchingStr(r"local-\w{10}"),
     dependency_import_ids=[AnyMatchingStr(r"python-import-\w{10}")],
@@ -892,12 +892,12 @@ def test_get_model_from_task_def(task_def, expected_model):
 
 
 CAPITALIZE_IMPORTS = [
-    model.LocalImport(id=AnyMatchingStr(r"local-\w{10}")),
+    ir.LocalImport(id=AnyMatchingStr(r"local-\w{10}")),
 ]
 
 
 GIT_TASK_IMPORTS = [
-    model.GitImport(
+    ir.GitImport(
         id=AnyMatchingStr(r"git-\w{10}_hello"),
         repo_url="hello",
         git_ref="main",
@@ -905,8 +905,8 @@ GIT_TASK_IMPORTS = [
 ]
 
 GENERATE_GRAPH_IMPORTS = [
-    model.LocalImport(id=AnyMatchingStr(r"local-\w{10}")),
-    model.GitImport(
+    ir.LocalImport(id=AnyMatchingStr(r"local-\w{10}")),
+    ir.GitImport(
         id=AnyMatchingStr(
             r"git-\w{10}_github_com_zapatacomputing_orquestra_workflow_sdk"
         ),
@@ -916,9 +916,9 @@ GENERATE_GRAPH_IMPORTS = [
 ]
 
 CAPITALIZE_IMPORTS_INFER = [
-    model.GitImport(
+    ir.GitImport(
         id=AnyMatchingStr(r"git-\w{10}_github_com_zapatacomputing_orquestra.*sdk"),
-        repo_url=model.GitURL(
+        repo_url=ir.GitURL(
             original_url=AnyMatchingStr(
                 r"git@github.com:zapatacomputing/orquestra.*sdk.*"
             ),
@@ -936,14 +936,14 @@ CAPITALIZE_IMPORTS_INFER = [
 
 
 CAPITALIZE_IMPORTS_INLINE = [
-    model.InlineImport(
+    ir.InlineImport(
         id=AnyMatchingStr(r".*"),
     )
 ]
 
 PYTHON_IMPORTS_MANUAL = [
-    model.LocalImport(id=AnyMatchingStr(r"local-\w{10}")),
-    model.PythonImports(
+    ir.LocalImport(id=AnyMatchingStr(r"local-\w{10}")),
+    ir.PythonImports(
         id=AnyMatchingStr(r"python-import-\w{10}"),
         packages=[
             {
@@ -958,8 +958,8 @@ PYTHON_IMPORTS_MANUAL = [
 ]
 
 PYTHON_IMPORTS_FROM_REQS = [
-    model.LocalImport(id=AnyMatchingStr(r"local-\w{10}")),
-    model.PythonImports(
+    ir.LocalImport(id=AnyMatchingStr(r"local-\w{10}")),
+    ir.PythonImports(
         id=AnyMatchingStr(r"python-import-\w{10}"),
         packages=[
             {
@@ -1043,7 +1043,7 @@ def test_make_import_model_git_import_with_auth():
         auth_secret=_dsl.Secret(secret_name),
     )
     imp_model = _traversal._make_import_model(imp)
-    assert isinstance(imp_model, model.GitImport)
+    assert isinstance(imp_model, ir.GitImport)
     assert imp_model.git_ref == git_ref
     assert imp_model.repo_url.original_url == original_url
     assert imp_model.repo_url.user == user
