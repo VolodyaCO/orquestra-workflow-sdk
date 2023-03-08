@@ -307,6 +307,8 @@ class ConstantNodePickle(BaseModel):
 
 # General ConstantNode that can hold constants that are not JSON-serializable
 ConstantNode = t.Union[ConstantNodeJSON, ConstantNodePickle]
+# ID of a node that can be a task argument. Multiple node types can be task inputs.
+# This is contrary to the outputs; only artifact nodes can be task outputs.
 ArgumentId = t.Union[ArtifactNodeId, ConstantNodeId, SecretNodeId]
 
 

@@ -68,9 +68,13 @@ def _gen_id_hash(*args):
     return shake.hexdigest(5)
 
 
-def _make_artifact_id(source_task: ir.TaskDef, future_index: int):
+def _make_artifact_id(source_task: ir.TaskDef, artifact_index: int):
+    """
+    Args:
+        artifact_index: index of the artifact in this workflow def.
+    """
     return _qe_compliant_name(
-        f"artifact-{future_index}-{source_task.fn_ref.function_name}"
+        f"artifact-{artifact_index}-{source_task.fn_ref.function_name}"
     )
 
 
@@ -80,15 +84,15 @@ GraphNode = t.Union[_dsl.ArtifactFuture, _dsl.Constant, _dsl.Secret]
 class GraphTraversal:
     def __init__(self):
         self._artifacts: t.MutableMapping[t.Hashable, ir.ArtifactNode] = {}
-        self._invocation_futures: t.MutableMapping[
-            _dsl.TaskInvocation, t.Set[_dsl.ArtifactFuture]
-        ] = {}
         self._secrets: t.MutableMapping[t.Hashable, ir.SecretNode] = {}
         self._constants: t.MutableMapping[t.Hashable, ir.ConstantNode] = {}
+        self._invocation_outputs: t.MutableMapping[
+            _dsl.TaskInvocation, t.Sequence[ir.ArtifactNode]
+        ] = {}
 
     def traverse(self, root_futures: t.Sequence[GraphNode]):
         """
-        Traverse the workflow graph.
+        Traverse the DSL workflow graph and collect the IR models.
 
         We iterate over the futures returned from the workflow find the artifacts,
         constants, and secrets.
@@ -104,14 +108,16 @@ class GraphTraversal:
                 # 1. We get the task invocation's task def.
                 # 2. We make sure all task outputs are covered: each output has an
                 #    artifact node and output ID in the task invocation.
-                artifact_node = _make_artifact_node(artifact_counter, n)
-                self._artifacts[_make_key(n)] = artifact_node
-                artifact_counter += 1
-                # Map the invocation to the future.
-                # Note: Each unique future has one invocation, but each invocation
-                #       can have many Futures.
-                #       We're mapping `invocation: set(futures from invocation)`
-                self._invocation_futures.setdefault(n.invocation, set()).add(n)
+
+                if n.invocation not in self._invocation_outputs:
+                    artifact_nodes = []
+                    for _ in range(n.invocation.task.output_metadata.n_outputs):
+                        artifact_node = _make_artifact_node(artifact_counter, n)
+                        self._artifacts[_make_key(n)] = artifact_node
+                        artifact_counter += 1
+                        artifact_nodes.append(artifact_node)
+
+                    self._invocation_outputs[n.invocation] = artifact_nodes
             elif isinstance(n, _dsl.Secret):
                 self._secrets[_make_key(n)] = ir.SecretNode(
                     id=f"secret-{secret_counter}",
@@ -133,25 +139,30 @@ class GraphTraversal:
 
     @property
     def invocations(self) -> t.Iterable[_dsl.TaskInvocation]:
-        return self._invocation_futures.keys()
+        return self._invocation_outputs.keys()
 
     def invocation_output_ids(
         self, invocation: _dsl.TaskInvocation
     ) -> t.Sequence[ir.ArtifactNodeId]:
-        # TODO: sort things just once when traversing the graph
-        futures = sorted(
-            self._invocation_futures[invocation], key=_sort_artifact_futures
-        )
-        return [self[future].id for future in futures]
+        return [artifact.id for artifact in self._invocation_outputs[invocation]]
 
     @property
     def secrets(self) -> t.Iterable[ir.SecretNode]:
         return self._secrets.values()
 
-    def get_argument_id(self, node: GraphNode):
+    def get_node_id(self, node: GraphNode) -> ir.ArgumentId:
         return self[node].id
 
+    def get_artifact_id_by_future(
+        self, future: _dsl.ArtifactFuture
+    ) -> ir.ArtifactNodeId:
+        if (output_index := future.output_index) is not None:
+            return self._invocation_outputs[future.invocation][output_index].id
+        else:
+            return self._invocation_outputs[future.invocation][0].id
+
     def __getitem__(self, node: GraphNode):
+        # TODO: remove
         key = _make_key(node)
         if key in self._artifacts:
             return self._artifacts[key]
@@ -405,12 +416,16 @@ def _make_task_model(
 
 
 def _make_artifact_node(
-    future_index: int, future: _dsl.ArtifactFuture
+    wf_scoped_artifact_index: int, future: _dsl.ArtifactFuture
 ) -> ir.ArtifactNode:
+    """
+    Args:
+        artifact_index: index of the artifact in this workflow def.
+    """
     return ir.ArtifactNode(
         id=_make_artifact_id(
             source_task=future.invocation.task,
-            future_index=future_index,
+            artifact_index=wf_scoped_artifact_index,
         ),
         custom_name=future.custom_name,
         serialization_format=ir.ArtifactFormat(future.serialization_format.value),
@@ -564,11 +579,10 @@ def _make_invocation_model(
     task_models_dict: t.Dict[_dsl.TaskDef, ir.TaskDef],
     graph: GraphTraversal,
 ):
-    args_ids = [graph.get_argument_id(arg) for arg in invocation.args]
+    args_ids = [graph.get_node_id(arg) for arg in invocation.args]
 
     kwargs_ids = {
-        arg_name: graph.get_argument_id(arg_val)
-        for arg_name, arg_val in invocation.kwargs
+        arg_name: graph.get_node_id(arg_val) for arg_name, arg_val in invocation.kwargs
     }
 
     return ir.TaskInvocation(
@@ -672,10 +686,10 @@ def flatten_graph(
         for dsl_invocation_i, dsl_invocation in enumerate(dsl_invocations)
     }
 
-    output_ids: t.List[t.Union[ir.ConstantNodeId, ir.ArtifactNodeId]] = []
-    for output_future in futures:
-        output_id = graph.get_argument_id(output_future)
-        output_ids.append(output_id)
+    output_ids: t.List[t.Union[ir.ConstantNodeId, ir.ArtifactNodeId]] = [
+        # TODO: handle constants
+        graph.get_artifact_id_by_future(output_future) for output_future in futures
+    ]
 
     return ir.WorkflowDef(
         # At the moment 'orq submit workflow-def <name>' assumes that the <name> is
@@ -689,15 +703,11 @@ def flatten_graph(
         },
         tasks={task_model.id: task_model for task_model in task_models_dict.values()},
         artifact_nodes={
-            artifact_node.id: artifact_node
-            for artifact_node in graph.artifacts
+            artifact_node.id: artifact_node for artifact_node in graph.artifacts
         },
-        secret_nodes={
-            secret_node.id: secret_node for secret_node in graph.secrets
-        },
+        secret_nodes={secret_node.id: secret_node for secret_node in graph.secrets},
         constant_nodes={
-            constant_node.id: constant_node
-            for constant_node in graph.constants
+            constant_node.id: constant_node for constant_node in graph.constants
         },
         task_invocations={
             invocation.id: invocation for invocation in invocation_models_dict.values()

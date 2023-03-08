@@ -296,6 +296,12 @@ def unhashable_constants():
 
 @_workflow.workflow
 def multiple_task_outputs():
+    # TODO: use tasks with 3 outputs to check:
+    # foo, bar, baz = task()
+    # _,   bar, baz = task()
+    # foo, bar, _   = task()
+    # _,   bar, _   = task()
+    # foo, _  , baz = task()
     a, b = multi_output()
     _, c = multi_output()
     return [a, b, c]
