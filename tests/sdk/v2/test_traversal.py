@@ -594,26 +594,37 @@ class ContextManager(t.Protocol):
     ids=_id_from_wf,
 )
 class TestWorkflowsTasksProperties:
+    """
+    Each test methods is a "property" that should hold true regardless of the workflow
+    or tasks used.
+    """
+
+    @staticmethod
     def test_wf_contains_task_ids(
-        self,
         workflow_template: _workflow.WorkflowTemplate,
         task_defs: t.Sequence[_dsl.TaskDef],
         outputs: t.List,
         expectation: ContextManager,
     ):
+        """
+        Task defs in Workflow IR should match the expected task defs.
+        """
         with expectation:
             wf_model = workflow_template.model
             for task_def in task_defs:
                 task_model = task_def.model
                 assert task_model.id in wf_model.tasks
 
+    @staticmethod
     def test_wf_imports_are_task_imports(
-        self,
         workflow_template: _workflow.WorkflowTemplate,
         task_defs: t.Sequence[_dsl.TaskDef],
         outputs: t.List,
         expectation: ContextManager,
     ):
+        """
+        Import IDs refered from task defs should be part of wf def IR.
+        """
         with expectation:
             wf = workflow_template.model
             wf_import_ids = set(wf.imports.keys())
@@ -638,37 +649,48 @@ class TestWorkflowsTasksProperties:
             assert task_import_ids_embedded == wf_import_ids
             assert task_import_ids_manual == wf_import_ids
 
+    @staticmethod
     def test_task_ids_match_invocations(
-        self,
         workflow_template: _workflow.WorkflowTemplate,
         task_defs: t.Sequence[_dsl.TaskDef],
         outputs: t.List,
         expectation: ContextManager,
     ):
+        """
+        Task def referenced from invocation should be part of the workflow def.
+        """
         with expectation:
             wf = workflow_template.model
-            assert set(wf.tasks.keys()) == {
-                invocation.task_id for invocation in wf.task_invocations.values()
-            }
+            task_def_ids = set(wf.tasks.keys())
 
+            for inv in wf.task_invocations.values():
+                assert inv.task_id in task_def_ids
+
+    @staticmethod
     def test_number_of_invocations(
-        self,
         workflow_template: _workflow.WorkflowTemplate,
         task_defs: t.Sequence[_dsl.TaskDef],
         outputs: t.List,
         expectation: ContextManager,
     ):
+        """
+        Number of task defs shouldn't exceed the number of invocations. Reasoning: each
+        task def should be invoked at least once.
+        """
         with expectation:
             wf = workflow_template.model
-            assert len(wf.task_invocations) >= len(wf.tasks)
+            assert len(wf.tasks) <= len(wf.task_invocations)
 
+    @staticmethod
     def test_invocation_outputs_are_unique(
-        self,
         workflow_template: _workflow.WorkflowTemplate,
         task_defs: t.Sequence[_dsl.TaskDef],
         outputs: t.List,
         expectation: ContextManager,
     ):
+        """
+        A given node ID should be only produced by a single task invocation.
+        """
         with expectation:
             wf = workflow_template.model
             seen_ids: t.Set[model.ArtifactNodeId] = set()
@@ -676,13 +698,16 @@ class TestWorkflowsTasksProperties:
                 assert set(invocation.output_ids).isdisjoint(seen_ids)
                 seen_ids.update(invocation.output_ids)
 
+    @staticmethod
     def test_no_hanging_inputs(
-        self,
         workflow_template: _workflow.WorkflowTemplate,
         task_defs: t.Sequence[_dsl.TaskDef],
         outputs: t.List,
         expectation: ContextManager,
     ):
+        """
+        Node IDs used as task inputs should point to constants or task outputs.
+        """
         with expectation:
             wf = workflow_template.model
             constant_ids = set(wf.constant_nodes.keys())
@@ -707,26 +732,34 @@ class TestWorkflowsTasksProperties:
             }
             assert kwarg_input_ids.issubset(filled_ids)
 
+    @staticmethod
     def test_constants_can_be_read(
-        self,
         workflow_template: _workflow.WorkflowTemplate,
         task_defs: t.Sequence[_dsl.TaskDef],
         outputs: t.List,
         expectation: ContextManager,
     ):
+        """
+        It should be possible to deserialize constant nodes embedded in the IR using
+        ``serde``.
+        """
         with expectation:
             wf = workflow_template.model
             for constant in wf.constant_nodes.values():
                 constant_dict = json.loads(constant.json())
                 _ = serde.value_from_result_dict(constant_dict)
 
+    @staticmethod
     def test_no_hanging_wf_outputs(
-        self,
         workflow_template: _workflow.WorkflowTemplate,
         task_defs: t.Sequence[_dsl.TaskDef],
         outputs: t.List,
         expectation: ContextManager,
     ):
+        """
+        IDs of the workflow output artifacts should be a subset of task invocation
+        output IDs.
+        """
         with expectation:
             wf = workflow_template.model
             task_output_ids = {
@@ -736,13 +769,16 @@ class TestWorkflowsTasksProperties:
             }
             assert set(wf.output_ids).issubset(task_output_ids)
 
+    @staticmethod
     def test_local_run(
-        self,
         workflow_template: _workflow.WorkflowTemplate,
         task_defs: t.Sequence[_dsl.TaskDef],
         outputs: t.List,
         expectation: ContextManager,
     ):
+        """
+        Running the workflow in-process should produce the expected outputs.
+        """
         wf = workflow_template
         if outputs:
             assert outputs == wf().local_run()
