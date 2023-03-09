@@ -78,7 +78,9 @@ def _make_artifact_id(source_task: ir.TaskDef, artifact_index: int):
     )
 
 
-GraphNode = t.Union[_dsl.ArtifactFuture, _dsl.Constant, _dsl.Secret]
+# DSL object that represents a data node in the workflow graph. Data nodes are
+# constants, secrets, artifact futures, but not task invocations.
+DSLDataNode = _dsl.Argument
 
 
 class GraphTraversal:
@@ -90,7 +92,7 @@ class GraphTraversal:
             _dsl.TaskInvocation, t.Sequence[ir.ArtifactNode]
         ] = {}
 
-    def traverse(self, root_futures: t.Sequence[GraphNode]):
+    def traverse(self, output_nodes: t.Sequence[DSLDataNode]):
         """
         Traverse the DSL workflow graph and collect the IR models.
 
@@ -100,7 +102,7 @@ class GraphTraversal:
         artifact_counter = 0
         secret_counter = 0
         constant_counter = 0
-        for n in _iter_nodes(root_futures):
+        for n in _iter_nodes(output_nodes):
             if isinstance(n, _dsl.ArtifactFuture):
                 # We need to capture all artifact outputs of a given task call, even if
                 # the artifact futures  aren't bound to variables in the workflow
@@ -150,33 +152,21 @@ class GraphTraversal:
     def secrets(self) -> t.Iterable[ir.SecretNode]:
         return self._secrets.values()
 
-    def get_node_id(self, node: GraphNode) -> ir.ArgumentId:
-        return self[node].id
-
-    def get_artifact_id_by_future(
-        self, future: _dsl.ArtifactFuture
-    ) -> ir.ArtifactNodeId:
-        if (output_index := future.output_index) is not None:
-            return self._invocation_outputs[future.invocation][output_index].id
-        else:
-            return self._invocation_outputs[future.invocation][0].id
-
-    def __getitem__(self, node: GraphNode):
-        # TODO: remove
+    def get_node_id(self, node: DSLDataNode) -> ir.ArgumentId:
         key = _make_key(node)
         if key in self._artifacts:
-            return self._artifacts[key]
+            return self._artifacts[key].id
         elif key in self._secrets:
-            return self._secrets[key]
+            return self._secrets[key].id
         elif key in self._constants:
-            return self._constants[key]
+            return self._constants[key].id
         else:
             # In normal circumstances, this should never happen
             raise KeyError(node)  # pragma: no cover
 
 
 def _iter_nodes(
-    root_futures: t.Sequence[GraphNode],
+    root_futures: t.Sequence[DSLDataNode],
 ) -> t.Iterator[t.Union[_dsl.ArtifactFuture, _dsl.Constant]]:
     traversal_list = [*root_futures]
     traversed_nodes = set()
@@ -687,8 +677,8 @@ def flatten_graph(
     }
 
     output_ids: t.List[t.Union[ir.ConstantNodeId, ir.ArtifactNodeId]] = [
-        # TODO: handle constants
-        graph.get_artifact_id_by_future(output_future) for output_future in futures
+        graph.get_node_id(output_node)
+        for output_node in futures
     ]
 
     return ir.WorkflowDef(

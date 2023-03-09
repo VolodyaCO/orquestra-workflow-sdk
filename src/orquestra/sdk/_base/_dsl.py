@@ -72,7 +72,9 @@ class UnknownPlaceholderInCustomNameWarning(Warning):
 
 # ----- data structures -----
 
+# Typealias used to mark variables expected to hold raw constant values.
 Constant = Any
+# Typelias used to mark variables that can be used as task arguments.
 Argument = Union[Constant, "ArtifactFuture", "Secret"]
 
 
