@@ -136,8 +136,13 @@ def pickled(value):
 
 
 @_dsl.task(n_outputs=2)
-def multi_output():
+def two_outputs():
     pass
+
+
+@_dsl.task
+def three_outputs():
+    return "a", "b", "c"
 
 
 dupe_import = _dsl.GithubImport("zapatacomputing/test")
@@ -269,16 +274,21 @@ def unhashable_constants():
 
 
 @_workflow.workflow
-def multiple_task_outputs():
-    # TODO: use tasks with 3 outputs to check:
-    # foo, bar, baz = task()
-    # _,   bar, baz = task()
-    # foo, bar, _   = task()
-    # _,   bar, _   = task()
-    # foo, _  , baz = task()
-    a, b = multi_output()
-    _, c = multi_output()
+def two_task_outputs():
+    a, b = two_outputs()
+    _, c = two_outputs()
     return [a, b, c]
+
+
+@_workflow.workflow
+def three_task_outputs():
+    foo1, bar1, baz1 = three_outputs()
+    _, bar2, baz2 = three_outputs()
+    foo3, bar3, _ = three_outputs()
+    _, bar4, _ = three_outputs()
+    foo5, _, baz5 = three_outputs()
+
+    return foo1, bar1, baz1, bar2, baz2, foo3, bar3, bar4, foo5, baz5
 
 
 @_workflow.workflow
@@ -526,7 +536,8 @@ class ContextManager(t.Protocol):
         (arg_test, [task_arg_test], None, does_not_raise()),
         (unhashable_constants, [join_strings], ["emilianozapata"], does_not_raise()),
         (resources_invocation, [capitalize_resourced], None, does_not_raise()),
-        (multiple_task_outputs, [multi_output], None, does_not_raise()),
+        (two_task_outputs, [two_outputs], None, does_not_raise()),
+        (three_task_outputs, [three_outputs], None, does_not_raise()),
         (wf_object_id, [get_object_id], None, does_not_raise()),
         (wf_objects_id, [get_objects_id], None, does_not_raise()),
         (wf_pass_callable, [invoke_callable], [43], does_not_raise()),
