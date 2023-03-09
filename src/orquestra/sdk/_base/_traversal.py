@@ -85,7 +85,6 @@ DSLDataNode = _dsl.Argument
 
 class GraphTraversal:
     def __init__(self):
-        self._artifacts: t.MutableMapping[t.Hashable, ir.ArtifactNode] = {}
         self._secrets: t.MutableMapping[t.Hashable, ir.SecretNode] = {}
         self._constants: t.MutableMapping[t.Hashable, ir.ConstantNode] = {}
         self._invocation_outputs: t.MutableMapping[
@@ -99,7 +98,7 @@ class GraphTraversal:
         We iterate over the futures returned from the workflow find the artifacts,
         constants, and secrets.
         """
-        artifact_counter = 0
+        wf_artifact_counter = 0
         secret_counter = 0
         constant_counter = 0
         for n in _iter_nodes(output_nodes):
@@ -112,14 +111,13 @@ class GraphTraversal:
                 #    artifact node and output ID in the task invocation.
 
                 if n.invocation not in self._invocation_outputs:
-                    artifact_nodes = []
+                    this_invocation_outputs = []
                     for _ in range(n.invocation.task.output_metadata.n_outputs):
-                        artifact_node = _make_artifact_node(artifact_counter, n)
-                        self._artifacts[_make_key(n)] = artifact_node
-                        artifact_counter += 1
-                        artifact_nodes.append(artifact_node)
+                        artifact_node = _make_artifact_node(wf_artifact_counter, n)
+                        wf_artifact_counter += 1
+                        this_invocation_outputs.append(artifact_node)
 
-                    self._invocation_outputs[n.invocation] = artifact_nodes
+                    self._invocation_outputs[n.invocation] = this_invocation_outputs
             elif isinstance(n, _dsl.Secret):
                 self._secrets[_make_key(n)] = ir.SecretNode(
                     id=f"secret-{secret_counter}",
@@ -133,7 +131,11 @@ class GraphTraversal:
 
     @property
     def artifacts(self) -> t.Iterable[ir.ArtifactNode]:
-        return self._artifacts.values()
+        return (
+            artifact_node
+            for outputs in self._invocation_outputs.values()
+            for artifact_node in outputs
+        )
 
     @property
     def constants(self) -> t.Iterable[ir.ConstantNode]:
@@ -154,15 +156,20 @@ class GraphTraversal:
 
     def get_node_id(self, node: DSLDataNode) -> ir.ArgumentId:
         key = _make_key(node)
-        if key in self._artifacts:
-            return self._artifacts[key].id
-        elif key in self._secrets:
+
+        if isinstance(node, _dsl.ArtifactFuture):
+            future = node
+            invocation = future.invocation
+            if (output_index := future.output_index) is not None:
+                artifact_node = self._invocation_outputs[invocation][output_index]
+            else:
+                artifact_node = self._invocation_outputs[invocation][0]
+            return artifact_node.id
+
+        elif isinstance(node, _dsl.Secret):
             return self._secrets[key].id
-        elif key in self._constants:
-            return self._constants[key].id
         else:
-            # In normal circumstances, this should never happen
-            raise KeyError(node)  # pragma: no cover
+            return self._constants[key].id
 
 
 def _iter_nodes(
@@ -556,13 +563,6 @@ def _make_invocation_id(task_name, invocation_i, custom_name):
         )
 
 
-def _sort_artifact_futures(artifact: _dsl.ArtifactFuture) -> int:
-    if artifact.output_index is None:
-        return -1
-    else:
-        return artifact.output_index
-
-
 def _make_invocation_model(
     invocation: _dsl.TaskInvocation,
     invocation_index: int,
@@ -677,8 +677,7 @@ def flatten_graph(
     }
 
     output_ids: t.List[t.Union[ir.ConstantNodeId, ir.ArtifactNodeId]] = [
-        graph.get_node_id(output_node)
-        for output_node in futures
+        graph.get_node_id(output_node) for output_node in futures
     ]
 
     return ir.WorkflowDef(
