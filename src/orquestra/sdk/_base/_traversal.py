@@ -19,7 +19,7 @@ from pip_api import Requirement
 from orquestra.sdk.schema import ir, responses
 
 from .. import exceptions
-from . import _dsl, _git_url_utils, _workflow, serde
+from . import _dsl, _exec_ctx, _git_url_utils, _workflow, serde
 
 N_BYTES_IN_HASH = 8
 
@@ -68,13 +68,13 @@ def _gen_id_hash(*args):
     return shake.hexdigest(5)
 
 
-def _make_artifact_id(source_task: ir.TaskDef, artifact_index: int):
+def _make_artifact_id(source_task: ir.TaskDef, wf_scoped_artifact_index: int):
     """
     Args:
         artifact_index: index of the artifact in this workflow def.
     """
     return _qe_compliant_name(
-        f"artifact-{artifact_index}-{source_task.fn_ref.function_name}"
+        f"artifact-{wf_scoped_artifact_index}-{source_task.fn_ref.function_name}"
     )
 
 
@@ -422,7 +422,7 @@ def _make_artifact_node(
     return ir.ArtifactNode(
         id=_make_artifact_id(
             source_task=future.invocation.task,
-            artifact_index=wf_scoped_artifact_index,
+            wf_scoped_artifact_index=wf_scoped_artifact_index,
         ),
         custom_name=future.custom_name,
         serialization_format=ir.ArtifactFormat(future.serialization_format.value),
@@ -613,6 +613,16 @@ def get_model_imports_from_task_def(task_def: _dsl.TaskDef) -> t.List[ir.Import]
         A list of model.Import objects the task requires
     """
     return list(_get_imports_from_task_def(task_def).values())
+
+
+def extract_root_futures(wf_def: _workflow.WorkflowDef) -> t.Sequence[_dsl.Argument]:
+    with _exec_ctx.workflow_build():
+        futures = wf_def._fn(*wf_def._workflow_args, **wf_def._workflow_kwargs)
+
+    if not isinstance(futures, collections.abc.Sequence) or isinstance(futures, str):
+        return (futures,)
+    else:
+        return futures
 
 
 def flatten_graph(

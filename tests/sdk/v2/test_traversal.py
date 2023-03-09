@@ -281,6 +281,12 @@ def two_task_outputs():
 
 
 @_workflow.workflow
+def two_task_outputs_all_used():
+    a, b = two_outputs()
+    return a, b
+
+
+@_workflow.workflow
 def three_task_outputs():
     foo1, bar1, baz1 = three_outputs()
     _, bar2, baz2 = three_outputs()
@@ -1250,3 +1256,34 @@ def test_workflow_with_secret():
     assert len(wf.secret_nodes) == 1
     assert len(wf.constant_nodes) == 0
     assert wf.secret_nodes["secret-0"].secret_name == "my_secret"
+
+
+class TestGraphTraversal:
+    """
+    Unit tests for GraphTraversal class. Contains edge cases identified while
+    integrating with other components.
+    """
+
+    @staticmethod
+    def test_all_used():
+        """
+        In this case the artifact indices were funky.
+        """
+        # Given
+        graph = _traversal.GraphTraversal()
+        futures = _traversal.extract_root_futures(two_task_outputs_all_used())
+
+        # When
+        graph.traverse(futures)
+
+        # Then
+        assert list(graph.artifacts) == [
+            ir.ArtifactNode(
+                id="artifact-0-two-outputs",
+                artifact_index=0,
+            ),
+            ir.ArtifactNode(
+                id="artifact-0-two-outputs",
+                artifact_index=1,
+            ),
+        ]
