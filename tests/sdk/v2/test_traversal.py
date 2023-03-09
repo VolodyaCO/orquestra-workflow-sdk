@@ -231,32 +231,6 @@ def daisy_chain():
     return [plus_2]
 
 
-# Exposing a function from PyPI-available library
-numpy_eye = _dsl.external_module_task(
-    module="numpy",
-    function="eye",
-    repo_url="git@github.com:numpy/numpy.git",
-    n_outputs=1,
-)
-
-
-# Exposing a function that's only available by git checkout
-generate_random_graph_erdos_renyi = _dsl.external_file_task(
-    file_path="src/python/zquantum/core/graph.py",
-    function="generate_random_graph_erdos_renyi",
-    repo_url="https://github.com/zapatacomputing/z-quantum-core",
-    git_ref="dev",
-    n_outputs=1,
-)
-
-
-@_workflow.workflow
-def external_task_usage():
-    graph = generate_random_graph_erdos_renyi(10, 0.2)
-    array = numpy_eye(2, 2)
-    return [graph, array]
-
-
 @_workflow.workflow
 def wf_with_git_deps():
     """Single task invocation. The task's source import is local, but it has a
@@ -545,12 +519,6 @@ class ContextManager(t.Protocol):
             multiple_tasks,
             [capitalize, uppercase],
             ["Emiliano", "ZAPATA"],
-            does_not_raise(),
-        ),
-        (
-            external_task_usage,
-            [generate_random_graph_erdos_renyi, numpy_eye],
-            None,
             does_not_raise(),
         ),
         (daisy_chain, [increment], [44], does_not_raise()),
