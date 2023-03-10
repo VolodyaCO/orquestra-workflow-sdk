@@ -29,7 +29,13 @@ def my_wf():
 
 
 🐛 *Bug Fixes*
-
+* Fixed returning intermediate workflow values (eg. with `orq task results`) when the task has multiple outputs and only some of them were used in the rest of the workflow function. The following should work now as expected:
+```python
+@sdk.workflow
+def my_wf():
+    _, b = two_output_task()
+    return b
+```
 
 
 💅 *Improvements*
