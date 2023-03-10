@@ -704,8 +704,11 @@ class TestWorkflowsTasksProperties:
             wf_def = workflow_template.model
             for inv in wf_def.task_invocations.values():
                 task_def_model = wf_def.tasks[inv.task_id]
-                task_def: _dsl.TaskDef = dispatch.locate_fn_ref(task_def_model.fn_ref)
-                assert len(inv.output_ids) == task_def.output_metadata.n_outputs
+                task_def_obj = dispatch.locate_fn_ref(task_def_model.fn_ref)
+                # We assume that `fn_ref` points to a @task() decorated function.
+                assert isinstance(task_def_obj, _dsl.TaskDef)
+
+                assert len(inv.output_ids) == task_def_obj.output_metadata.n_outputs
 
     @staticmethod
     def test_no_hanging_inputs(

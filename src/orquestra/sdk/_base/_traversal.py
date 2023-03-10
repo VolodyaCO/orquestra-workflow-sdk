@@ -115,15 +115,16 @@ class GraphTraversal:
                     if out_meta.is_subscriptable:
                         this_invocation_outputs = []
                         for output_index in range(out_meta.n_outputs):
+                            default_format = ir.ArtifactFormat(
+                                _dsl.ArtifactFuture.DEFAULT_SERIALIZATION_FORMAT.value
+                            )
                             artifact_node = ir.ArtifactNode(
                                 id=_make_artifact_id(
                                     source_task=n.invocation.task,
                                     wf_scoped_artifact_index=wf_artifact_counter,
                                 ),
                                 custom_name=_dsl.ArtifactFuture.DEFAULT_CUSTOM_NAME,
-                                serialization_format=ir.ArtifactFormat(
-                                    _dsl.ArtifactFuture.DEFAULT_SERIALIZATION_FORMAT.value
-                                ),
+                                serialization_format=default_format,
                                 artifact_index=output_index,
                             )
                             wf_artifact_counter += 1
@@ -131,9 +132,10 @@ class GraphTraversal:
 
                         self._invocation_outputs[n.invocation] = this_invocation_outputs
                     else:
-                        assert (
-                            n.output_index is None
-                        ), "Attempted to subscript an invocation that's not subscriptable"
+                        assert n.output_index is None, (
+                            "Attempted to subscript an invocation that's not "
+                            "subscriptable"
+                        )
 
                         self._invocation_outputs[n.invocation] = [
                             ir.ArtifactNode(
@@ -444,24 +446,6 @@ def _make_task_model(
     )
 
 
-# def _make_artifact_node(
-#     wf_scoped_artifact_index: int, future: _dsl.ArtifactFuture
-# ) -> ir.ArtifactNode:
-#     """
-#     Args:
-#         artifact_index: index of the artifact in this workflow def.
-#     """
-#     return ir.ArtifactNode(
-#         id=_make_artifact_id(
-#             source_task=future.invocation.task,
-#             wf_scoped_artifact_index=wf_scoped_artifact_index,
-#         ),
-#         custom_name=future.custom_name,
-#         serialization_format=ir.ArtifactFormat(future.serialization_format.value),
-#         artifact_index=future.output_index,
-#     )
-
-
 def _get_nested_objects(obj) -> t.Iterable:
     """
     Figure out an object's neighbors in the reference graph using best-effort
@@ -648,6 +632,9 @@ def get_model_imports_from_task_def(task_def: _dsl.TaskDef) -> t.List[ir.Import]
 
 
 def extract_root_futures(wf_def: _workflow.WorkflowDef) -> t.Sequence[_dsl.Argument]:
+    """
+    Executes the ``wf_def`` function to get the workflow output futures.
+    """
     with _exec_ctx.workflow_build():
         futures = wf_def._fn(*wf_def._workflow_args, **wf_def._workflow_kwargs)
 

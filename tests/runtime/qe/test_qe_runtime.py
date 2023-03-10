@@ -10,7 +10,6 @@ import tarfile
 import typing as t
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, PropertyMock
-from orquestra.sdk._base.serde import result_from_artifact
 
 import pytest
 import responses
@@ -24,10 +23,11 @@ from orquestra.sdk._base._conversions._yaml_exporter import (
     workflow_to_yaml,
 )
 from orquestra.sdk._base._testing._example_wfs import my_workflow
-from orquestra.sdk.schema.ir import ArtifactNodeId, TaskInvocationId
-from orquestra.sdk.schema.responses import JSONResult
+from orquestra.sdk._base.serde import result_from_artifact
 from orquestra.sdk.schema.configs import RuntimeConfiguration, RuntimeName
+from orquestra.sdk.schema.ir import ArtifactNodeId, TaskInvocationId
 from orquestra.sdk.schema.local_database import StoredWorkflowRun
+from orquestra.sdk.schema.responses import JSONResult
 from orquestra.sdk.schema.workflow_run import (
     RunStatus,
     State,

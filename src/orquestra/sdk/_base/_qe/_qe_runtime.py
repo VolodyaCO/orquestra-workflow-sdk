@@ -694,10 +694,7 @@ class QERuntime(RuntimeInterface):
                     # A task invocation can have multiple outputs. If any of the above
                     # errors happens for any of this invocation's outputs we consider
                     # the whole invocation unavailable.
-                    if (
-                        e.response.status_code == 404
-                        or e.response.status_code == 500
-                    ):
+                    if e.response.status_code == 404 or e.response.status_code == 500:
                         continue
                     else:
                         raise e
