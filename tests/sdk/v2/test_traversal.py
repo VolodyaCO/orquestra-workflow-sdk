@@ -1283,7 +1283,7 @@ class TestGraphTraversal:
                 artifact_index=0,
             ),
             ir.ArtifactNode(
-                id="artifact-0-two-outputs",
+                id="artifact-1-two-outputs",
                 artifact_index=1,
             ),
         ]
