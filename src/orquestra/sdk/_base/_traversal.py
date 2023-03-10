@@ -88,7 +88,7 @@ class GraphTraversal:
         self._secrets: t.MutableMapping[t.Hashable, ir.SecretNode] = {}
         self._constants: t.MutableMapping[t.Hashable, ir.ConstantNode] = {}
         self._invocation_outputs: t.MutableMapping[
-            _dsl.TaskInvocation, t.Sequence[ir.ArtifactNode]
+            _dsl.TaskInvocation, t.MutableSequence[ir.ArtifactNode]
         ] = {}
 
     def traverse(self, output_nodes: t.Sequence[DSLDataNode]):
@@ -103,21 +103,53 @@ class GraphTraversal:
         constant_counter = 0
         for n in _iter_nodes(output_nodes):
             if isinstance(n, _dsl.ArtifactFuture):
-                # We need to capture all artifact outputs of a given task call, even if
-                # the artifact futures  aren't bound to variables in the workflow
-                # function. To do that:
-                # 1. We get the task invocation's task def.
-                # 2. We make sure all task outputs are covered: each output has an
-                #    artifact node and output ID in the task invocation.
-
                 if n.invocation not in self._invocation_outputs:
-                    this_invocation_outputs = []
-                    for _ in range(n.invocation.task.output_metadata.n_outputs):
-                        artifact_node = _make_artifact_node(wf_artifact_counter, n)
-                        wf_artifact_counter += 1
-                        this_invocation_outputs.append(artifact_node)
+                    # This future points to an invocation we haven't seen before. We
+                    # need to make as many artifact nodes as there are task outputs,
+                    # even if some artifacts were not bound to variables inside the
+                    # workflow fn. This is needed for proper support of cases like:
+                    #
+                    #      _, bar = my_task()
 
-                    self._invocation_outputs[n.invocation] = this_invocation_outputs
+                    out_meta = n.invocation.task.output_metadata
+                    if out_meta.is_subscriptable:
+                        this_invocation_outputs = []
+                        for output_index in range(out_meta.n_outputs):
+                            artifact_node = ir.ArtifactNode(
+                                id=_make_artifact_id(
+                                    source_task=n.invocation.task,
+                                    wf_scoped_artifact_index=wf_artifact_counter,
+                                ),
+                                custom_name=_dsl.ArtifactFuture.DEFAULT_CUSTOM_NAME,
+                                serialization_format=ir.ArtifactFormat(
+                                    _dsl.ArtifactFuture.DEFAULT_SERIALIZATION_FORMAT.value
+                                ),
+                                artifact_index=output_index,
+                            )
+                            wf_artifact_counter += 1
+                            this_invocation_outputs.append(artifact_node)
+
+                        self._invocation_outputs[n.invocation] = this_invocation_outputs
+                    else:
+                        assert (
+                            n.output_index is None
+                        ), "Attempted to subscript an invocation that's not subscriptable"
+
+                        self._invocation_outputs[n.invocation] = [
+                            ir.ArtifactNode(
+                                id=_make_artifact_id(
+                                    source_task=n.invocation.task,
+                                    wf_scoped_artifact_index=wf_artifact_counter,
+                                ),
+                                custom_name=n.custom_name,
+                                serialization_format=ir.ArtifactFormat(
+                                    n.serialization_format.value
+                                ),
+                                artifact_index=None,
+                            )
+                        ]
+                        wf_artifact_counter += 1
+
             elif isinstance(n, _dsl.Secret):
                 self._secrets[_make_key(n)] = ir.SecretNode(
                     id=f"secret-{secret_counter}",
@@ -412,22 +444,22 @@ def _make_task_model(
     )
 
 
-def _make_artifact_node(
-    wf_scoped_artifact_index: int, future: _dsl.ArtifactFuture
-) -> ir.ArtifactNode:
-    """
-    Args:
-        artifact_index: index of the artifact in this workflow def.
-    """
-    return ir.ArtifactNode(
-        id=_make_artifact_id(
-            source_task=future.invocation.task,
-            wf_scoped_artifact_index=wf_scoped_artifact_index,
-        ),
-        custom_name=future.custom_name,
-        serialization_format=ir.ArtifactFormat(future.serialization_format.value),
-        artifact_index=future.output_index,
-    )
+# def _make_artifact_node(
+#     wf_scoped_artifact_index: int, future: _dsl.ArtifactFuture
+# ) -> ir.ArtifactNode:
+#     """
+#     Args:
+#         artifact_index: index of the artifact in this workflow def.
+#     """
+#     return ir.ArtifactNode(
+#         id=_make_artifact_id(
+#             source_task=future.invocation.task,
+#             wf_scoped_artifact_index=wf_scoped_artifact_index,
+#         ),
+#         custom_name=future.custom_name,
+#         serialization_format=ir.ArtifactFormat(future.serialization_format.value),
+#         artifact_index=future.output_index,
+#     )
 
 
 def _get_nested_objects(obj) -> t.Iterable:

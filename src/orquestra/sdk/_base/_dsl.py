@@ -576,12 +576,15 @@ class ArtifactFormat(Enum):
 
 
 class ArtifactFuture:
+    DEFAULT_CUSTOM_NAME = None
+    DEFAULT_SERIALIZATION_FORMAT = ArtifactFormat.AUTO
+
     def __init__(
         self,
         invocation: TaskInvocation,
         output_index: Optional[int] = None,
-        custom_name: Optional[str] = None,
-        serialization_format: ArtifactFormat = ArtifactFormat.AUTO,
+        custom_name: Optional[str] = DEFAULT_CUSTOM_NAME,
+        serialization_format: ArtifactFormat = DEFAULT_SERIALIZATION_FORMAT,
     ):
         self.invocation = invocation
         # if the invocation returns multiple values, this the index in the output
